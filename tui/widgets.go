@@ -1,0 +1,206 @@
+package tui
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"sort"
+	"strings"
+	"time"
+
+	"codeberg.org/tslocum/cview"
+	"github.com/dustin/go-humanize"
+	"github.com/gdamore/tcell/v3"
+	"github.com/riadafridishibly/npmclean/scanner"
+)
+
+func (a *App) IsScanning() bool {
+	return a.scanner != nil && a.scanner.IsRunning()
+}
+
+func (a *App) startScanning() {
+	a.scanner = scanner.NewScanner(a.rootPath)
+	a.scanner.Start()
+
+	ctx := context.Background()
+
+	go a.processProgressEvents(ctx)
+	go a.processResultEvents(ctx)
+
+	a.trySendUIUpdate(func() { a.header.SetText("[white] Scanning...") })
+}
+
+func (a *App) replaceHomeWithTilde(p string) string {
+	if after, ok := strings.CutPrefix(p, a.userHomeDir); ok {
+		p = "~" + after
+	}
+	return p
+}
+
+func (a *App) buildTable() *cview.Table {
+	table := a.table
+	table.Clear()
+	items := a.items[:]
+	sort.Slice(items, func(i, j int) bool { return items[i].Size > items[j].Size })
+	for row, item := range items {
+		align := cview.AlignLeft
+
+		// Access
+		accessCell := cview.NewTableCell(humanize.Time(item.LastModifiedAt))
+		accessCell.SetTextColor(tcell.ColorWhite)
+		accessCell.SetAlign(align)
+
+		// TODO: Set the actual object as reference
+		// We can probably add the actual path here
+		// Then we'll just query it, and never going to need to lookup the a.items array
+		// Then we'll get the cell and take the reference pathCell.GetReference().(string)
+		//  TODO: how about the GC? Are we creating multiple reference?
+		//  Though: we're only sorting them, but they are basically the same pointer
+		//  Only restarting the application should clear both the list and table
+		accessCell.SetReference(item)
+		table.SetCell(row, 0, accessCell)
+
+		// Size
+		sizeCell := cview.NewTableCell(humanize.Bytes(uint64(item.Size)))
+		sizeCell.SetTextColor(tcell.ColorWhite)
+		sizeCell.SetAlign(cview.AlignRight)
+		table.SetCell(row, 1, sizeCell)
+
+		// Path
+		pathCell := cview.NewTableCell(a.replaceHomeWithTilde(item.Path))
+		pathCell.SetTextColor(tcell.ColorWhite)
+		pathCell.SetAlign(align)
+		pathCell.SetExpansion(1)
+		table.SetCell(row, 2, pathCell)
+	}
+
+	table.SetBorder(false)
+	table.SetBorders(false)
+	table.SetSelectable(true, false)
+	table.SetSeparator(' ')
+
+	// table.SetScrollBarVisibility(cview.ScrollBarNever)
+
+	return table
+}
+
+func (a *App) handleResult(result *scanner.NodeModuleInfo) {
+	a.items = append(a.items, result)
+	a.totalClaimableSize.Add(result.Size)
+
+	a.trySendUIUpdate(func() { a.buildTable() })
+}
+
+// TODO: Remove
+func (a *App) updateStatus() {
+	if a.scanner == nil {
+		return
+	}
+
+	fileCount := a.scanner.FileCount()
+	elapsed := a.scanner.ElapsedTime().Round(time.Second)
+
+	status := fmt.Sprintf("[white]Found: %d items | Files scanned: %s | Elasped: %s",
+		len(a.items),
+		humanize.Comma(fileCount),
+		elapsed)
+
+	// Add scanning path if we have recent progress
+	if time.Since(a.lastUpdate) < 2*time.Second && a.IsScanning() {
+		status += " | Scanning..."
+	}
+
+	a.header.SetText(status)
+
+	// Update footer with appropriate help
+	footerText := "[white]"
+	if a.IsScanning() {
+		footerText += "Scanning... Press q to stop"
+	} else {
+		footerText += "s: Start  ↑/↓: Navigate  i: Details  d: Delete  q: Quit"
+	}
+
+	// if len(a.items) > 0 {
+	// 	footerText += fmt.Sprintf("  (%d/%d)", a.selectedIndex+1, len(a.items))
+	// }
+
+	// a.footer.SetText(footerText)
+}
+
+func (a *App) showItemDetail() {
+	if a.table == nil {
+		return
+	}
+
+	row, _ := a.table.GetSelection()
+	cell := a.table.GetCell(row, 0) // always bind the reference to 0th column
+	if cell == nil {
+		return
+	}
+
+	ref, ok := cell.GetReference().(*scanner.NodeModuleInfo)
+	if !ok {
+		log.Printf("Expected *scanner.NodeModuleInfo, but found %T", cell.GetReference())
+		return
+	}
+
+	// TODO: can this ever be out of bound?
+	// If we have inconsistency between table and items then probably yes
+	item := ref
+
+	var detail strings.Builder
+	fmt.Fprintf(&detail, "[yellow] Path:[-]\n%s\n\n", item.Path)
+	fmt.Fprintf(&detail, "[yellow] Size:[-] %s\n", humanize.Bytes(uint64(item.Size)))
+	fmt.Fprintf(&detail, "[yellow] Last Accessed:[-] %s\n", item.LastModifiedAt.Format("2006-01-02 15:04:05 MST"))
+	fmt.Fprintf(&detail, "[yellow] Scanned At:[-] %s", item.ScannedAt.Format(time.Kitchen))
+
+	a.detailModal.SetText(detail.String())
+	a.showDetail = true
+	a.app.SetRoot(a.detailModal, false)
+}
+
+func (a *App) confirmDelete() {
+	if a.table == nil {
+		return
+	}
+	row, _ := a.table.GetSelection()
+	item := a.items[row]
+	baseName := item.Path
+	if len(baseName) > 50 {
+		baseName = "..." + baseName[len(baseName)-47:]
+	}
+
+	text := fmt.Sprintf("Delete '%s'?\n\nSize: %s", baseName, humanize.Bytes(uint64(item.Size)))
+	a.confirmModal.SetText(text)
+	// Probably we don't need this
+	a.pendingDelete = row
+	a.showConfirm = true
+	a.app.SetRoot(a.confirmModal, false)
+}
+
+func (a *App) deleteItem(index int) {
+	// TODO: Get index from the table with: a.table.GetSelection()
+
+	// Remove from slice
+	// a.items = append(a.items[:index], a.items[index+1:]...)
+
+	// Update list
+	// TODO: Rebuild table
+
+	// a.updateStatus()
+}
+
+func (a *App) Stop() {
+	if a.scanner != nil {
+		a.scanner.Stop()
+	}
+}
+
+func (a *App) Run() error {
+	go func() {
+		for updateFn := range a.uiUpdates {
+			a.app.QueueUpdateDraw(updateFn)
+		}
+	}()
+	return a.app.Run()
+}
