@@ -62,15 +62,5 @@ func getLastModTime(path string) (time.Time, error) {
 		return time.Time{}, err
 	}
 
-	// TODO: we probably don't need any of these for mtime
-	// previously we wanted access time
-	stat := info.Sys().(*syscall.Stat_t)
-	mtime := time.Unix(stat.Mtimespec.Sec, stat.Mtimespec.Nsec)
-
-	// Some filesystems might have zero atime
-	if mtime.IsZero() {
-		mtime = info.ModTime()
-	}
-
-	return mtime, nil
+	return info.ModTime(), nil
 }

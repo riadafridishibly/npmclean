@@ -56,21 +56,11 @@ func getDirSize(path string) (int64, error) {
 	return blocks.Load() * 512, nil
 }
 
-// TODO: We don't need separate stat call on this
+// Use modification time for consistency across platforms
 func getLastModTime(path string) (time.Time, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return time.Time{}, err
 	}
-
-	// FIXME: depending on OS it'll be different
-	stat := info.Sys().(*syscall.Stat_t)
-	atime := time.Unix(stat.Atim.Sec, stat.Atim.Nsec)
-
-	// Some filesystems might have zero atime
-	if atime.IsZero() {
-		atime = info.ModTime()
-	}
-
-	return atime, nil
+	return info.ModTime(), nil
 }
