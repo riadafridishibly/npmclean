@@ -113,7 +113,12 @@ func (s *Scanner) ElapsedTime() time.Duration {
 func (s *Scanner) calculateSize(path string) {
 	size, err := GetDirectorySize(path)
 	if err != nil {
-		s.progress <- &ScanResult{Error: err}
+		select {
+		case s.progress <- &ScanResult{Error: err}:
+		case <-s.stopChan:
+			return
+		default:
+		}
 		return
 	}
 
@@ -138,6 +143,7 @@ func (s *Scanner) calculateSize(path string) {
 	fileCount := atomic.LoadInt64(&s.fileCount)
 	select {
 	case s.progress <- &ScanResult{Path: path, Size: size, FileCount: fileCount}:
+	case <-s.stopChan:
 	default:
 	}
 }
@@ -202,17 +208,22 @@ func (s *Scanner) scan() {
 		}
 
 		if err != nil {
-			s.progress <- &ScanResult{Error: err}
+			select {
+			case s.progress <- &ScanResult{Error: err}:
+			case <-s.stopChan:
+				return fs.SkipAll
+			}
 			return nil
 		}
 
 		fileCount := atomic.AddInt64(&s.fileCount, 1)
-
 		// Send progress update every 10 files
 		// TODO: Use a ticker for this
 		if fileCount%10 == 0 {
 			select {
 			case s.progress <- &ScanResult{ScannedPath: path, FileCount: fileCount}:
+			case <-s.stopChan:
+				return fs.SkipAll
 			default:
 			}
 		}
@@ -232,7 +243,12 @@ func (s *Scanner) scan() {
 	}
 
 	if err := fastwalk.Walk(&conf, s.rootPath, walkFn); err != nil {
-		s.progress <- &ScanResult{Error: err}
+		select {
+		case s.progress <- &ScanResult{Error: err}:
+		case <-s.stopChan:
+		default:
+			// fallback to close
+		}
 	}
 
 	close(nodeModulePaths)
