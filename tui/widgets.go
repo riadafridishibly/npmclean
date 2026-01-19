@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -164,30 +166,57 @@ func (a *App) confirmDelete() {
 		return
 	}
 	row, _ := a.table.GetSelection()
-	item := a.items[row]
-	baseName := item.Path
-	if len(baseName) > 50 {
-		baseName = "..." + baseName[len(baseName)-47:]
+	cell := a.table.GetCell(row, 0)
+	if cell == nil {
+		return
 	}
-
-	text := fmt.Sprintf("Delete '%s'?\n\nSize: %s", baseName, humanize.Bytes(uint64(item.Size)))
+	module, ok := cell.GetReference().(*scanner.NodeModuleInfo)
+	if !ok {
+		// TODO: Send error
+		return
+	}
+	baseName := module.Path
+	text := fmt.Sprintf("Delete '%s'?\n\nSize: %s", baseName, humanize.Bytes(uint64(module.Size)))
 	a.confirmModal.SetText(text)
-	// Probably we don't need this
-	a.pendingDelete = row
 	a.showConfirm = true
 	a.app.SetRoot(a.confirmModal, false)
 }
 
-func (a *App) deleteItem(index int) {
-	// TODO: Get index from the table with: a.table.GetSelection()
+func (a *App) deleteSelectedItem() {
+	row, _ := a.table.GetSelection()
+	cell := a.table.GetCell(row, 0)
+	if cell == nil {
+		return
+	}
 
-	// Remove from slice
-	// a.items = append(a.items[:index], a.items[index+1:]...)
+	module, ok := cell.GetReference().(*scanner.NodeModuleInfo)
+	if !ok {
+		// TODO: Send error
+		return
+	}
 
-	// Update list
-	// TODO: Rebuild table
+	// TODO: probably acquire lock
+	a.items = slices.DeleteFunc(a.items, func(mod *scanner.NodeModuleInfo) bool { return mod.Path == module.Path })
 
-	// a.updateStatus()
+	a.totalClaimableSize.Add(-module.Size)
+	a.trySendUIUpdate(func() {
+		a.buildTable()
+		a.updateFinalStatus()
+	})
+
+	p := module.Path
+	// TODO: Delete async and update status
+	go func() {
+		a.trySendUIUpdate(func() { a.footer.SetText(fmt.Sprintf("Deleting: %q", p)) })
+		err := os.RemoveAll(p)
+		if err != nil {
+			log.Printf("Error deleting dir: %s: error: %v", p, err)
+		} else {
+			a.trySendUIUpdate(func() { a.footer.SetText(fmt.Sprintf("Deleted: %q", p)) })
+		}
+
+		time.AfterFunc(2*time.Second, func() { a.trySendUIUpdate(a.updateFinalStatus) })
+	}()
 }
 
 func (a *App) Stop() {

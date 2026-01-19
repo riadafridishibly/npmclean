@@ -23,12 +23,11 @@ type App struct {
 	detailModal  *cview.Modal
 	confirmModal *cview.Modal
 
-	items         []*scanner.NodeModuleInfo
-	rootPath      string // TODO: We'll support multiple roots later
-	lastUpdate    time.Time
-	showDetail    bool
-	showConfirm   bool
-	pendingDelete int
+	items       []*scanner.NodeModuleInfo
+	rootPath    string // TODO: We'll support multiple roots later
+	lastUpdate  time.Time
+	showDetail  bool
+	showConfirm bool
 
 	uiUpdates chan func()
 
@@ -99,10 +98,10 @@ func NewApp(scanPath string) *App {
 
 		switch buttonLabel {
 		case "Delete":
-			a.deleteItem(a.pendingDelete)
+			a.deleteSelectedItem()
 		case "Don't ask":
 			// TOOD: remember not to ask again
-			a.deleteItem(a.pendingDelete)
+			a.deleteSelectedItem()
 		}
 	})
 
