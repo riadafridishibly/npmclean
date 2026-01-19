@@ -1,6 +1,6 @@
-## Query `node_modules` directory in system and delete them
+## Query `node_modules` directories in system and delete them [WIP]
 
-This is a faster implementation of tool like npkill. I fun thing to implement
+![Screenshot](screenshot.png)
+
+This is a faster implementation of tool like npkill. A fun thing to implement
 and optimize.
-
-
