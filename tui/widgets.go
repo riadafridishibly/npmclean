@@ -45,12 +45,10 @@ func (a *App) buildTable() *cview.Table {
 	items := a.items[:]
 	sort.Slice(items, func(i, j int) bool { return items[i].Size > items[j].Size })
 	for row, item := range items {
-		align := cview.AlignLeft
-
 		// Access
-		accessCell := cview.NewTableCell(humanize.Time(item.LastModifiedAt))
+		accessCell := cview.NewTableCell(" " + humanize.Time(item.LastModifiedAt))
 		accessCell.SetTextColor(tcell.ColorWhite)
-		accessCell.SetAlign(align)
+		accessCell.SetAlign(cview.AlignLeft)
 
 		// TODO: Set the actual object as reference
 		// We can probably add the actual path here
@@ -63,7 +61,7 @@ func (a *App) buildTable() *cview.Table {
 		table.SetCell(row, 0, accessCell)
 
 		// Size
-		sizeCell := cview.NewTableCell(humanize.Bytes(uint64(item.Size)))
+		sizeCell := cview.NewTableCell(fmt.Sprintf(" %s ", humanize.Bytes(uint64(item.Size))))
 		sizeCell.SetTextColor(tcell.ColorWhite)
 		sizeCell.SetAlign(cview.AlignRight)
 		table.SetCell(row, 1, sizeCell)
@@ -71,7 +69,7 @@ func (a *App) buildTable() *cview.Table {
 		// Path
 		pathCell := cview.NewTableCell(a.replaceHomeWithTilde(item.Path))
 		pathCell.SetTextColor(tcell.ColorWhite)
-		pathCell.SetAlign(align)
+		pathCell.SetAlign(cview.AlignLeft)
 		pathCell.SetExpansion(1)
 		table.SetCell(row, 2, pathCell)
 	}
@@ -100,7 +98,7 @@ func (a *App) updateStatus() {
 	}
 
 	fileCount := a.scanner.FileCount()
-	elapsed := a.scanner.ElapsedTime().Round(time.Second)
+	elapsed := a.scanner.ElapsedTime().Round(time.Millisecond).String()
 
 	status := fmt.Sprintf("[white]Found: %d items | Files scanned: %s | Elasped: %s",
 		len(a.items),
@@ -153,12 +151,12 @@ func (a *App) showItemDetail() {
 	var detail strings.Builder
 	fmt.Fprintf(&detail, "[yellow] Path:[-]\n%s\n\n", item.Path)
 	fmt.Fprintf(&detail, "[yellow] Size:[-] %s\n", humanize.Bytes(uint64(item.Size)))
-	fmt.Fprintf(&detail, "[yellow] Last Accessed:[-] %s\n", item.LastModifiedAt.Format("2006-01-02 15:04:05 MST"))
+	fmt.Fprintf(&detail, "[yellow] Last Modified:[-] %s\n", item.LastModifiedAt.Format("2006-01-02 15:04:05 MST"))
 	fmt.Fprintf(&detail, "[yellow] Scanned At:[-] %s", item.ScannedAt.Format(time.Kitchen))
 
 	a.detailModal.SetText(detail.String())
 	a.showDetail = true
-	a.app.SetRoot(a.detailModal, false)
+	a.setRoot(a.detailModal, false)
 }
 
 func (a *App) confirmDelete() {
@@ -179,7 +177,7 @@ func (a *App) confirmDelete() {
 	text := fmt.Sprintf("Delete '%s'?\n\nSize: %s", baseName, humanize.Bytes(uint64(module.Size)))
 	a.confirmModal.SetText(text)
 	a.showConfirm = true
-	a.app.SetRoot(a.confirmModal, false)
+	a.setRoot(a.confirmModal, false)
 }
 
 func (a *App) deleteSelectedItem() {

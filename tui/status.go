@@ -15,7 +15,7 @@ func (a *App) updateFinalStatus() {
 	}
 
 	fileCount := a.scanner.FileCount()
-	elapsed := a.scanner.ElapsedTime().Round(time.Second)
+	elapsed := a.scanner.ElapsedTime().Round(time.Millisecond).String()
 
 	status := fmt.Sprintf("[white] Found: %d items | Files scanned: %s | Elasped: %s | Total Claimable: %s ",
 		len(a.items),

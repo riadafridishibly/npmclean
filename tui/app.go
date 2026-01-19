@@ -89,12 +89,12 @@ func NewApp(scanPath string) *App {
 
 	detailModal.SetDoneFunc(func(_ int, _ string) {
 		a.showDetail = false
-		app.SetRoot(flex, true)
+		a.setRoot(flex, true)
 	})
 
 	confirmModal.SetDoneFunc(func(buttonIndex int, buttonLabel string) {
 		a.showConfirm = false
-		app.SetRoot(flex, true)
+		a.setRoot(flex, true)
 
 		switch buttonLabel {
 		case "Delete":
@@ -116,6 +116,6 @@ func NewApp(scanPath string) *App {
 	header.SetText(fmt.Sprintf("[white]Ready to scan. Press 's' to start scanning: %s", scanPath))
 	footer.SetText("[white]s: Start scan  ↑/↓: Navigate  i: Details  d: Delete  q: Quit")
 
-	app.SetRoot(flex, true)
+	a.setRoot(flex, true)
 	return a
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"codeberg.org/tslocum/cview"
 	"github.com/riadafridishibly/npmclean/scanner"
 )
 
@@ -12,6 +13,13 @@ func (a *App) trySendUIUpdate(f func()) {
 	case a.uiUpdates <- f:
 	default:
 	}
+}
+
+// setRoot queues a SetRoot operation to avoid data races
+func (a *App) setRoot(primitive cview.Primitive, focus bool) {
+	a.app.QueueUpdateDraw(func() {
+		a.app.SetRoot(primitive, focus)
+	})
 }
 
 func (a *App) processProgressEvents(ctx context.Context) {
