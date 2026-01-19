@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"context"
 	"io/fs"
 	"sync"
 	"sync/atomic"
@@ -32,9 +33,6 @@ type Scanner struct {
 	// Progress events, as we progress through file tree
 	progress chan *ScanResult
 
-	// Don't send any more events, for signaling the senders
-	stopChan chan struct{}
-
 	// Signaling the consumers, if we're done you can stop consuming from the
 	// results and progress channel
 	doneChan chan struct{}
@@ -49,18 +47,24 @@ type Scanner struct {
 
 	backlogsMu sync.Mutex
 	backlogs   []string
+
+	// Context for cancellation
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func NewScanner(rootPath string) *Scanner {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Scanner{
 		rootPath:  rootPath,
 		results:   make(chan *NodeModuleInfo, 100),
 		progress:  make(chan *ScanResult, 100),
-		stopChan:  make(chan struct{}),
 		doneChan:  make(chan struct{}),
 		status:    statusIdle,
 		fileCount: 0,
 		startTime: time.Now(),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
@@ -69,18 +73,23 @@ func (s *Scanner) Start() {
 		return
 	}
 	s.startTime = time.Now()
+	// Reset context for new scan
+	s.ctx, s.cancel = context.WithCancel(context.Background())
 	go s.scan()
 }
 
 func (s *Scanner) Stop() {
-	select {
-	case <-s.stopChan:
-		// already closed
-	default:
-		atomic.StoreInt32(&s.status, statusIdle)
-		close(s.stopChan)
-		<-s.doneChan
+	if !atomic.CompareAndSwapInt32(&s.status, statusRunning, statusIdle) {
+		return // not running
 	}
+
+	// Cancel the context
+	if s.cancel != nil {
+		s.cancel()
+	}
+
+	// Wait for completion
+	<-s.doneChan
 }
 
 func (s *Scanner) IsRunning() bool {
@@ -115,7 +124,7 @@ func (s *Scanner) calculateSize(path string) {
 	if err != nil {
 		select {
 		case s.progress <- &ScanResult{Error: err}:
-		case <-s.stopChan:
+		case <-s.ctx.Done():
 			return
 		default:
 		}
@@ -136,14 +145,14 @@ func (s *Scanner) calculateSize(path string) {
 
 	select {
 	case s.results <- info:
-	case <-s.stopChan:
+	case <-s.ctx.Done():
 		return
 	}
 
 	fileCount := atomic.LoadInt64(&s.fileCount)
 	select {
 	case s.progress <- &ScanResult{Path: path, Size: size, FileCount: fileCount}:
-	case <-s.stopChan:
+	case <-s.ctx.Done():
 	default:
 	}
 }
@@ -163,7 +172,7 @@ Loop:
 			}
 			s.calculateSize(path)
 
-		case <-s.stopChan:
+		case <-s.ctx.Done():
 			return
 		}
 	}
@@ -174,10 +183,8 @@ Loop:
 	s.backlogs = nil
 	s.backlogsMu.Unlock()
 	for _, p := range backlogs {
-		select {
-		case <-s.stopChan:
+		if err := s.ctx.Err(); err != nil {
 			return
-		default:
 		}
 		s.calculateSize(p)
 	}
@@ -201,16 +208,14 @@ func (s *Scanner) scan() {
 	go s.processSizeCalculation(nodeModulePaths)
 
 	walkFn := func(path string, d fs.DirEntry, err error) error {
-		select {
-		case <-s.stopChan:
+		if err := s.ctx.Err(); err != nil {
 			return fs.SkipAll
-		default:
 		}
 
 		if err != nil {
 			select {
 			case s.progress <- &ScanResult{Error: err}:
-			case <-s.stopChan:
+			case <-s.ctx.Done():
 				return fs.SkipAll
 			}
 			return nil
@@ -222,7 +227,7 @@ func (s *Scanner) scan() {
 		if fileCount%10 == 0 {
 			select {
 			case s.progress <- &ScanResult{ScannedPath: path, FileCount: fileCount}:
-			case <-s.stopChan:
+			case <-s.ctx.Done():
 				return fs.SkipAll
 			default:
 			}
@@ -231,7 +236,7 @@ func (s *Scanner) scan() {
 		if d.IsDir() && d.Name() == "node_modules" {
 			select {
 			case nodeModulePaths <- path:
-			case <-s.stopChan:
+			case <-s.ctx.Done():
 				return fs.SkipAll
 			default:
 				s.addToBacklogs(path)
@@ -245,7 +250,7 @@ func (s *Scanner) scan() {
 	if err := fastwalk.Walk(&conf, s.rootPath, walkFn); err != nil {
 		select {
 		case s.progress <- &ScanResult{Error: err}:
-		case <-s.stopChan:
+		case <-s.ctx.Done():
 		default:
 			// fallback to close
 		}
