@@ -4,6 +4,11 @@ import (
 	"time"
 )
 
+type result struct {
+	Size         int64
+	FilesScanned int64
+}
+
 type DevIno struct {
 	Dev uint64
 	Ino uint64

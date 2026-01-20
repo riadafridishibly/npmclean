@@ -2,7 +2,7 @@ package scanner
 
 import "time"
 
-func GetDirectorySize(path string) (int64, error) {
+func GetDirectorySize(path string) (result, error) {
 	return getDirSize(path)
 }
 

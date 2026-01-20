@@ -13,8 +13,9 @@ import (
 	"github.com/charlievieth/fastwalk"
 )
 
-func getDirSize(path string) (int64, error) {
+func getDirSize(path string) (result, error) {
 	var blocks atomic.Int64
+	var fileScanned atomic.Int64
 	var mu sync.Mutex
 	seen := make(map[DevIno]struct{})
 
@@ -22,6 +23,7 @@ func getDirSize(path string) (int64, error) {
 		if err != nil {
 			return err
 		}
+		fileScanned.Add(1)
 
 		info, err := d.Info()
 		if err != nil {
@@ -48,12 +50,11 @@ func getDirSize(path string) (int64, error) {
 	}
 
 	err := fastwalk.Walk(&fastwalk.Config{Follow: false}, path, walk)
-	if err != nil {
-		return 0, err
-	}
-
-	// POSIX st.Blocks is in 512-byte units
-	return blocks.Load() * 512, nil
+	return result{
+		// POSIX st.Blocks is in 512-byte units
+		Size:         blocks.Load() * 512,
+		FilesScanned: fileScanned.Load(),
+	}, err
 }
 
 // Use modification time for consistency across platforms

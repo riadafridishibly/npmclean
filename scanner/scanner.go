@@ -71,6 +71,7 @@ func (s *Scanner) Start() {
 		return
 	}
 	s.startTime = time.Now()
+	s.fileCount = 0
 	// Reset context for new scan
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	go func() {
@@ -130,7 +131,7 @@ func (s *Scanner) ElapsedTime() time.Duration {
 }
 
 func (s *Scanner) calculateSize(path string) {
-	size, err := GetDirectorySize(path)
+	result, err := GetDirectorySize(path)
 	if err != nil {
 		select {
 		case s.progress <- &ScanResult{Error: err}:
@@ -141,6 +142,8 @@ func (s *Scanner) calculateSize(path string) {
 		return
 	}
 
+	fileCount := atomic.AddInt64(&s.fileCount, result.FilesScanned)
+
 	lastModified, err := GetLastModifiedAt(path)
 	if err != nil {
 		lastModified = time.Now()
@@ -148,7 +151,7 @@ func (s *Scanner) calculateSize(path string) {
 
 	info := &NodeModuleInfo{
 		Path:           path,
-		Size:           size,
+		Size:           result.Size,
 		LastModifiedAt: lastModified,
 		ScannedAt:      time.Now(),
 	}
@@ -159,9 +162,8 @@ func (s *Scanner) calculateSize(path string) {
 		return
 	}
 
-	fileCount := atomic.LoadInt64(&s.fileCount)
 	select {
-	case s.progress <- &ScanResult{Path: path, Size: size, FileCount: fileCount}:
+	case s.progress <- &ScanResult{Path: path, Size: result.Size, FileCount: fileCount}:
 	case <-s.ctx.Done():
 	default:
 	}
@@ -189,9 +191,10 @@ func (s *Scanner) scan() {
 			return nil
 		}
 
+		fileCount := atomic.AddInt64(&s.fileCount, 1)
+
 		select {
 		case <-ticker.C:
-			fileCount := atomic.AddInt64(&s.fileCount, 1)
 			select {
 			case s.progress <- &ScanResult{ScannedPath: path, FileCount: fileCount}:
 			default:

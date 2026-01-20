@@ -11,21 +11,26 @@ import (
 	"github.com/charlievieth/fastwalk"
 )
 
-func getDirSize(path string) (int64, error) {
-	var total int64
+func getDirSize(path string) (result, error) {
+	var total atomic.Int64
+	var fileScanned atomic.Int64
 	walk := func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
+		fileScanned.Add(1)
 		info, err := d.Info()
 		if err != nil {
 			return err
 		}
-		atomic.AddInt64(&total, info.Size())
+		total.Add(info.Size())
 		return nil
 	}
 	err := fastwalk.Walk(&fastwalk.Config{Follow: false}, path, walk)
-	return total, err
+	return result{
+		Size:         total.Load(),
+		FilesScanned: fileScanned.Load(),
+	}, err
 }
 
 func getLastModTime(path string) (time.Time, error) {
@@ -33,7 +38,5 @@ func getLastModTime(path string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	// Portable systems don’t expose atime API reliably
-	// So fallback to modification time
 	return info.ModTime(), nil
 }
