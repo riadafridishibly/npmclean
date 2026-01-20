@@ -38,7 +38,7 @@ func headerStatusError(theme *Theme, err error) string {
 }
 
 func footerStatusMenu(theme *Theme) string {
-	return fmt.Sprintf("[%s] r: Restart Scan  ↑/↓: Navigate  i: Details  d: Delete  t: Theme  q: Quit", theme.fg.String())
+	return fmt.Sprintf("[%s] r: Rescan  ↑/↓: Navigate  i: Details  d: Delete  t: Theme  q: Quit", theme.fg.String())
 }
 
 func footerStatusScanning(theme *Theme, path string) string {
