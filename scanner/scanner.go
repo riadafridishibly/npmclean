@@ -3,14 +3,12 @@ package scanner
 import (
 	"context"
 	"io/fs"
-	"sync"
+	"runtime"
 	"sync/atomic"
 	"time"
 
 	"github.com/charlievieth/fastwalk"
 )
-
-// FIXME: Fix all the experimental mess
 
 type NodeModuleInfo struct {
 	Path           string
@@ -45,8 +43,8 @@ type Scanner struct {
 	// Scanner start time to track how much time does it take to complete the scan
 	startTime time.Time
 
-	backlogsMu sync.Mutex
-	backlogs   []string
+	// ElapsedTime from scanner start in millisecond
+	elapsedTime atomic.Int64
 
 	// Context for cancellation
 	ctx    context.Context
@@ -75,7 +73,15 @@ func (s *Scanner) Start() {
 	s.startTime = time.Now()
 	// Reset context for new scan
 	s.ctx, s.cancel = context.WithCancel(context.Background())
-	go s.scan()
+	go func() {
+		defer close(s.doneChan) // We're done when result is done
+		defer close(s.progress)
+		defer close(s.results)
+
+		s.scan()
+
+		s.elapsedTime.Store(time.Since(s.startTime).Milliseconds())
+	}()
 }
 
 func (s *Scanner) Stop() {
@@ -116,7 +122,11 @@ func (s *Scanner) ElapsedTime() time.Duration {
 	if s.startTime.IsZero() {
 		return 0
 	}
-	return time.Since(s.startTime)
+	elapsed := s.elapsedTime.Load()
+	if elapsed == 0 {
+		return time.Since(s.startTime)
+	}
+	return time.Duration(elapsed) * time.Millisecond
 }
 
 func (s *Scanner) calculateSize(path string) {
@@ -157,55 +167,13 @@ func (s *Scanner) calculateSize(path string) {
 	}
 }
 
-func (s *Scanner) processSizeCalculation(paths <-chan string) {
-	defer close(s.doneChan) // We're done when result is done
-	defer close(s.progress)
-	defer close(s.results)
+const eventSendingFreq = 300 * time.Millisecond
 
-	// 1. Process from chan
-Loop:
-	for {
-		select {
-		case path, ok := <-paths:
-			if !ok {
-				break Loop
-			}
-			s.calculateSize(path)
-
-		case <-s.ctx.Done():
-			return
-		}
-	}
-
-	// 2. Process from backlogs
-	s.backlogsMu.Lock()
-	backlogs := s.backlogs
-	s.backlogs = nil
-	s.backlogsMu.Unlock()
-	for _, p := range backlogs {
-		if err := s.ctx.Err(); err != nil {
-			return
-		}
-		s.calculateSize(p)
-	}
-
-	s.progress <- &ScanResult{Done: true, FileCount: s.fileCount}
-}
-
-func (s *Scanner) addToBacklogs(path string) {
-	s.backlogsMu.Lock()
-	defer s.backlogsMu.Unlock()
-	s.backlogs = append(s.backlogs, path)
-}
-
-// TODO: We have to implement two staged search here
-// 1. First we want to find the node_modules folders as fast as possible
-// 2. For each folder we want to claculate it's size
 func (s *Scanner) scan() {
-	conf := fastwalk.Config{Follow: false}
+	conf := fastwalk.Config{Follow: false, NumWorkers: runtime.NumCPU()}
 
-	nodeModulePaths := make(chan string, 128)
-	go s.processSizeCalculation(nodeModulePaths)
+	ticker := time.NewTicker(eventSendingFreq)
+	defer ticker.Stop()
 
 	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err := s.ctx.Err(); err != nil {
@@ -221,26 +189,20 @@ func (s *Scanner) scan() {
 			return nil
 		}
 
-		fileCount := atomic.AddInt64(&s.fileCount, 1)
-		// Send progress update every 10 files
-		// TODO: Use a ticker for this
-		if fileCount%10 == 0 {
+		select {
+		case <-ticker.C:
+			fileCount := atomic.AddInt64(&s.fileCount, 1)
 			select {
 			case s.progress <- &ScanResult{ScannedPath: path, FileCount: fileCount}:
-			case <-s.ctx.Done():
-				return fs.SkipAll
 			default:
 			}
+		case <-s.ctx.Done():
+			return fs.SkipAll
+		default:
 		}
 
 		if d.IsDir() && d.Name() == "node_modules" {
-			select {
-			case nodeModulePaths <- path:
-			case <-s.ctx.Done():
-				return fs.SkipAll
-			default:
-				s.addToBacklogs(path)
-			}
+			s.calculateSize(path)
 			return fastwalk.SkipDir
 		}
 
@@ -256,5 +218,5 @@ func (s *Scanner) scan() {
 		}
 	}
 
-	close(nodeModulePaths)
+	s.progress <- &ScanResult{Done: true, FileCount: s.fileCount}
 }

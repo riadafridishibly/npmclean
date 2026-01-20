@@ -5,6 +5,7 @@ package scanner
 import (
 	"io/fs"
 	"os"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -47,7 +48,7 @@ func getDirSize(path string) (int64, error) {
 		return nil
 	}
 
-	err := fastwalk.Walk(&fastwalk.Config{Follow: false}, path, walk)
+	err := fastwalk.Walk(&fastwalk.Config{Follow: false, NumWorkers: runtime.NumCPU()}, path, walk)
 	if err != nil {
 		return 0, err
 	}
