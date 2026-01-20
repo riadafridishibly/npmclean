@@ -4,7 +4,7 @@ import "github.com/gdamore/tcell/v3"
 
 func (a *App) handleInput(event *tcell.EventKey) *tcell.EventKey {
 	// TODO: Fix the modal handling
-	if a.showDetail || a.showConfirm {
+	if a.showDetail || a.showConfirm || a.showTheme {
 		// Let modals handle their own input
 		switch event.Str() {
 		case "l":
@@ -43,6 +43,8 @@ func (a *App) handleInput(event *tcell.EventKey) *tcell.EventKey {
 		a.showItemDetail()
 	case "d", "D":
 		a.confirmDelete()
+	case "t", "T":
+		a.showThemeSelector()
 	}
 
 	return event

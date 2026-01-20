@@ -6,23 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"time"
 
-	"github.com/dustin/go-humanize"
 	"github.com/riadafridishibly/npmclean/tui"
 )
-
-func memoryUsage() {
-	var m runtime.MemStats
-	ticks := time.Tick(100 * time.Millisecond)
-
-	iter := 1
-	for range ticks {
-		runtime.ReadMemStats(&m)
-		log.Printf("iter=%d,alloc=%s,sys=%s\n", iter, humanize.Bytes(m.Alloc), humanize.Bytes(m.Sys))
-		iter++
-	}
-}
 
 func tempDir() string {
 	if runtime.GOOS == "darwin" {
@@ -41,8 +27,6 @@ func main() {
 	log.SetOutput(logFile)
 
 	fmt.Println("Logfile is being written in:", logFile.Name())
-
-	go memoryUsage()
 
 	var rootDir string
 	if len(os.Args) > 1 {

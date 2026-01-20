@@ -28,6 +28,7 @@ func (a *App) processProgressEvents(ctx context.Context) {
 	defer ticker.Stop()
 
 	var progress *scanner.ScanResult
+	firstStatusSent := false
 	for {
 		select {
 		case <-ctx.Done():
@@ -40,6 +41,13 @@ func (a *App) processProgressEvents(ctx context.Context) {
 				a.trySendUIUpdate(a.updateFinalStatus)
 				return
 			}
+			if !firstStatusSent {
+				if a.scanner.IsRunning() && progress != nil {
+					p := *progress
+					a.trySendUIUpdate(func() { a.updateProgressStatus(&p) })
+				}
+				firstStatusSent = true
+			}
 		case <-ticker.C:
 			if a.scanner.IsRunning() && progress != nil {
 				p := *progress
@@ -51,9 +59,6 @@ func (a *App) processProgressEvents(ctx context.Context) {
 
 func (a *App) processResultEvents(ctx context.Context) {
 	resultsChan := a.scanner.Results()
-
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
 
 	for {
 		select {
@@ -68,10 +73,6 @@ func (a *App) processResultEvents(ctx context.Context) {
 			}
 			// TODO: We probably don't need to queue every update
 			a.trySendUIUpdate(func() { a.handleResult(result) })
-		case <-ticker.C:
-			if a.scanner.IsRunning() {
-				a.trySendUIUpdate(func() { a.updateStatus() })
-			}
 		}
 	}
 }

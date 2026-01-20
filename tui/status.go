@@ -9,26 +9,54 @@ import (
 	"github.com/riadafridishibly/npmclean/scanner"
 )
 
+func headerStartupStatus(theme *Theme, path string) string {
+	return fmt.Sprintf(" Ready to scan. Press '[%s]s[-]' to start scanning: [::b][%s]%s[::-][-]",
+		theme.darkGray.String(), theme.orange.String(), path)
+}
+
+func headerStatus(theme *Theme, items, fileCount, totalClaimableSize int64, elapsed time.Duration, done bool) string {
+	if elapsed.Seconds() > 1 {
+		elapsed = elapsed.Round(time.Second)
+	} else {
+		elapsed = elapsed.Round(time.Millisecond)
+	}
+	s := "Scanning"
+	if done {
+		s = "Found"
+	}
+	return fmt.Sprintf(" %s: [%s]%d[-] items | Files scanned: [%s]%s[-] | Elasped: [%s]%s[-] | Total Claimable: [::b][%s]%s[::-][-] ",
+		s,
+		theme.darkGray.String(), items,
+		theme.darkGray.String(), humanize.Comma(fileCount),
+		theme.darkGray.String(), elapsed,
+		theme.darkGray.String(), humanize.Bytes(uint64(totalClaimableSize)),
+	)
+}
+
+func headerStatusError(theme *Theme, err error) string {
+	return fmt.Sprintf("[%s] Error: %v", theme.darkGray.String(), err)
+}
+
+func footerStatusMenu(theme *Theme) string {
+	return fmt.Sprintf("[%s] s: Start scan  ↑/↓: Navigate  i: Details  d: Delete  t: Theme  q: Quit", theme.fg.String())
+}
+
+func footerStatusScanning(theme *Theme, path string) string {
+	return fmt.Sprintf(" Scanning: [%s]%s", theme.purple.String(), path)
+}
+
 func (a *App) updateFinalStatus() {
 	if a.scanner == nil {
 		return
 	}
 
 	fileCount := a.scanner.FileCount()
-	elapsed := a.scanner.ElapsedTime().Round(time.Millisecond).String()
 
-	status := fmt.Sprintf("[white] Found: %d items | Files scanned: %s | Elasped: %s | Total Claimable: %s ",
-		len(a.items),
-		humanize.Comma(fileCount),
-		elapsed,
-		humanize.Bytes(uint64(a.totalClaimableSize.Load())),
-	)
-	a.header.SetText(status)
 	a.header.SetTextAlign(cview.AlignCenter)
+	a.header.SetText(headerStatus(&a.currentTheme, int64(len(a.items)), fileCount, a.totalClaimableSize.Load(), a.scanner.ElapsedTime(), a.scanner.IsRunning()))
 
-	footerText := "[black] [s/S]: Start  ↑/↓: Navigate  i: Details  [d/D]: Delete  [q/Q]: Quit"
-	a.footer.SetText(footerText)
 	a.footer.SetTextAlign(cview.AlignCenter)
+	a.footer.SetText(footerStatusMenu(&a.currentTheme))
 }
 
 func (a *App) updateProgressStatus(progress *scanner.ScanResult) {
@@ -38,9 +66,14 @@ func (a *App) updateProgressStatus(progress *scanner.ScanResult) {
 	}
 
 	if progress.Error != nil {
-		a.header.SetText(fmt.Sprintf("[red] Error: %v", progress.Error))
+		a.header.SetText(headerStatusError(&a.currentTheme, progress.Error))
 		return
 	}
+
+	theme := a.currentTheme
+
+	a.header.SetTextAlign(cview.AlignCenter)
+	a.header.SetText(headerStatus(&theme, int64(len(a.items)), progress.FileCount, a.totalClaimableSize.Load(), a.scanner.ElapsedTime(), progress.Done))
 
 	a.lastUpdate = time.Now()
 
@@ -51,6 +84,7 @@ func (a *App) updateProgressStatus(progress *scanner.ScanResult) {
 		if len(scanPath) > w {
 			scanPath = "..." + scanPath[len(scanPath)-w:]
 		}
-		a.footer.SetText(" [white]Scanning: [black]" + scanPath)
+		a.footer.SetTextAlign(cview.AlignLeft)
+		a.footer.SetText(footerStatusScanning(&a.currentTheme, scanPath))
 	}
 }

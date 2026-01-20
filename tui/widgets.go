@@ -12,7 +12,6 @@ import (
 
 	"codeberg.org/tslocum/cview"
 	"github.com/dustin/go-humanize"
-	"github.com/gdamore/tcell/v3"
 	"github.com/riadafridishibly/npmclean/scanner"
 )
 
@@ -28,8 +27,6 @@ func (a *App) startScanning() {
 
 	go a.processProgressEvents(ctx)
 	go a.processResultEvents(ctx)
-
-	a.trySendUIUpdate(func() { a.header.SetText("[white] Scanning...") })
 }
 
 func (a *App) replaceHomeWithTilde(p string) string {
@@ -40,6 +37,7 @@ func (a *App) replaceHomeWithTilde(p string) string {
 }
 
 func (a *App) buildTable() *cview.Table {
+	theme := a.currentTheme
 	table := a.table
 	table.Clear()
 	items := a.items[:]
@@ -47,7 +45,7 @@ func (a *App) buildTable() *cview.Table {
 	for row, item := range items {
 		// Access
 		accessCell := cview.NewTableCell(" " + humanize.Time(item.LastModifiedAt))
-		accessCell.SetTextColor(tcell.ColorWhite)
+		accessCell.SetTextColor(theme.fg)
 		accessCell.SetAlign(cview.AlignLeft)
 
 		// TODO: Set the actual object as reference
@@ -62,13 +60,13 @@ func (a *App) buildTable() *cview.Table {
 
 		// Size
 		sizeCell := cview.NewTableCell(fmt.Sprintf(" %s ", humanize.Bytes(uint64(item.Size))))
-		sizeCell.SetTextColor(tcell.ColorWhite)
+		sizeCell.SetTextColor(theme.yellow)
 		sizeCell.SetAlign(cview.AlignRight)
 		table.SetCell(row, 1, sizeCell)
 
 		// Path
 		pathCell := cview.NewTableCell(a.replaceHomeWithTilde(item.Path))
-		pathCell.SetTextColor(tcell.ColorWhite)
+		pathCell.SetTextColor(theme.fg)
 		pathCell.SetAlign(cview.AlignLeft)
 		pathCell.SetExpansion(1)
 		table.SetCell(row, 2, pathCell)
@@ -89,42 +87,6 @@ func (a *App) handleResult(result *scanner.NodeModuleInfo) {
 	a.totalClaimableSize.Add(result.Size)
 
 	a.trySendUIUpdate(func() { a.buildTable() })
-}
-
-// TODO: Remove
-func (a *App) updateStatus() {
-	if a.scanner == nil {
-		return
-	}
-
-	fileCount := a.scanner.FileCount()
-	elapsed := a.scanner.ElapsedTime().Round(time.Millisecond).String()
-
-	status := fmt.Sprintf("[white]Found: %d items | Files scanned: %s | Elasped: %s",
-		len(a.items),
-		humanize.Comma(fileCount),
-		elapsed)
-
-	// Add scanning path if we have recent progress
-	if time.Since(a.lastUpdate) < 2*time.Second && a.IsScanning() {
-		status += " | Scanning..."
-	}
-
-	a.header.SetText(status)
-
-	// Update footer with appropriate help
-	footerText := "[white]"
-	if a.IsScanning() {
-		footerText += "Scanning... Press q to stop"
-	} else {
-		footerText += "s: Start  ↑/↓: Navigate  i: Details  d: Delete  q: Quit"
-	}
-
-	// if len(a.items) > 0 {
-	// 	footerText += fmt.Sprintf("  (%d/%d)", a.selectedIndex+1, len(a.items))
-	// }
-
-	// a.footer.SetText(footerText)
 }
 
 func (a *App) showItemDetail() {
@@ -149,10 +111,10 @@ func (a *App) showItemDetail() {
 	item := ref
 
 	var detail strings.Builder
-	fmt.Fprintf(&detail, "[yellow] Path:[-]\n%s\n\n", item.Path)
-	fmt.Fprintf(&detail, "[yellow] Size:[-] %s\n", humanize.Bytes(uint64(item.Size)))
-	fmt.Fprintf(&detail, "[yellow] Last Modified:[-] %s\n", item.LastModifiedAt.Format("2006-01-02 15:04:05 MST"))
-	fmt.Fprintf(&detail, "[yellow] Scanned At:[-] %s", item.ScannedAt.Format(time.Kitchen))
+	fmt.Fprintf(&detail, "Path: %s\n", item.Path)
+	fmt.Fprintf(&detail, "Size: %s\n", humanize.Bytes(uint64(item.Size)))
+	fmt.Fprintf(&detail, "Last Modified: %s\n", item.LastModifiedAt.Format("2006-01-02 15:04:05 MST"))
+	fmt.Fprintf(&detail, "Scanned At: %s\n", item.ScannedAt.Format(time.Kitchen))
 
 	a.detailModal.SetText(detail.String())
 	a.showDetail = true
@@ -224,6 +186,7 @@ func (a *App) Stop() {
 }
 
 func (a *App) Run() error {
+	log.Println("CurrentTheme:", a.currentTheme)
 	go func() {
 		for updateFn := range a.uiUpdates {
 			a.app.QueueUpdateDraw(updateFn)
