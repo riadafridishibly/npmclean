@@ -186,11 +186,11 @@ func (a *App) Stop() {
 }
 
 func (a *App) Run() error {
-	log.Println("CurrentTheme:", a.currentTheme)
 	go func() {
 		for updateFn := range a.uiUpdates {
 			a.app.QueueUpdateDraw(updateFn)
 		}
 	}()
+	go a.startScanning()
 	return a.app.Run()
 }

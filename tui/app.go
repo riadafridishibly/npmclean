@@ -35,7 +35,9 @@ type App struct {
 	userHomeDir        string
 	totalClaimableSize atomic.Int64
 
-	currentTheme Theme
+	currentTheme  Theme
+	shouldRestart bool
+	isRestarting  atomic.Bool
 }
 
 func defaultTheme() Theme {
@@ -119,21 +121,22 @@ func NewApp(scanPath string) *App {
 	panels.AddPanel("table", table, true, true)
 
 	a := &App{
-		app:          app,
-		header:       header,
-		footer:       footer,
-		detailModal:  detailModal,
-		confirmModal: confirmModal,
-		themeModal:   themeModal,
-		rootPath:     scanPath,
-		panels:       panels,
-		table:        table,
-		items:        make([]*scanner.NodeModuleInfo, 0),
-		showDetail:   false,
-		showConfirm:  false,
-		showTheme:    false,
-		uiUpdates:    make(chan func(), 128),
-		currentTheme: theme,
+		app:           app,
+		header:        header,
+		footer:        footer,
+		detailModal:   detailModal,
+		confirmModal:  confirmModal,
+		themeModal:    themeModal,
+		rootPath:      scanPath,
+		panels:        panels,
+		table:         table,
+		items:         make([]*scanner.NodeModuleInfo, 0),
+		showDetail:    false,
+		showConfirm:   false,
+		showTheme:     false,
+		uiUpdates:     make(chan func(), 128),
+		currentTheme:  theme,
+		shouldRestart: false,
 	}
 
 	flex := cview.NewFlex()
@@ -200,4 +203,8 @@ func (a *App) showThemeSelector() {
 	a.themeModal.SetText(text)
 	a.showTheme = true
 	a.setRoot(a.themeModal, false)
+}
+
+func (a *App) ShouldRestart() bool {
+	return a.shouldRestart
 }

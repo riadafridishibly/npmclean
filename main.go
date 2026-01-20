@@ -51,9 +51,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	app := tui.NewApp(absPath)
-	if err := app.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running application: %v\n", err)
-		os.Exit(1)
+	for {
+		app := tui.NewApp(absPath)
+		if err := app.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error running application: %v\n", err)
+			os.Exit(1)
+		}
+		if !app.ShouldRestart() {
+			break
+		}
 	}
 }

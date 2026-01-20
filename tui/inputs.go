@@ -29,15 +29,17 @@ func (a *App) handleInput(event *tcell.EventKey) *tcell.EventKey {
 	}
 
 	switch event.Str() {
-	// TODO: We don't want this step, we want immediate invokation
-	case "s", "S":
-		if !a.IsScanning() {
-			a.startScanning()
-		}
-		return nil
 	case "q", "Q":
 		a.Stop()
 		a.app.Stop()
+		return nil
+	case "r", "R":
+		if !a.isRestarting.Load() {
+			a.isRestarting.Store(true)
+			a.shouldRestart = true
+			a.Stop()
+			a.app.Stop()
+		}
 		return nil
 	case "i", "I":
 		a.showItemDetail()
