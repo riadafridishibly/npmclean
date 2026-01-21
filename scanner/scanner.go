@@ -66,7 +66,7 @@ func NewScanner(rootPath string) *Scanner {
 	ctx, cancel := context.WithCancel(context.Background())
 	c, err := cache.NewCache()
 	if err != nil {
-		// If cache fails, continue without it
+		log.Printf("Failed to initialize cache: %v", err)
 		c = nil
 	}
 	return &Scanner{
