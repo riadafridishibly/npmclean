@@ -36,7 +36,7 @@ func NewCache() (*Cache, error) {
 		return nil, fmt.Errorf("failed to get cache directory: %w", err)
 	}
 
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
