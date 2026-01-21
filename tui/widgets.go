@@ -190,6 +190,12 @@ func (a *App) confirmDelete() {
 	a.setRoot(a.confirmModal, false)
 }
 
+// FIXME: When deleting items we should also consider deleting from cache!
+// Though it'll not be a big of a problem because before using cache, currently
+// we perform an stat call and check if path exists. But the better way is
+// after deleting from system, we should delete from cache as well. Also we
+// need to wait for the delete operation to be done and prevent user from
+// closing the applicaiton.
 func (a *App) deleteSelectedItem() {
 	row, _ := a.table.GetSelection()
 	cell := a.table.GetCell(row, 0)
