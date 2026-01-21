@@ -91,6 +91,19 @@ func (a *App) buildTable() *cview.Table {
 }
 
 func (a *App) handleResult(result *scanner.NodeModuleInfo) {
+	// Check if this path is already in items
+	for _, item := range a.items {
+		if item.Path == result.Path {
+			// Update existing item
+			item.Size = result.Size
+			item.LastModifiedAt = result.LastModifiedAt
+			item.ScannedAt = result.ScannedAt
+			a.trySendUIUpdate(func() { a.buildTable() })
+			return
+		}
+	}
+
+	// Add new item
 	a.items = append(a.items, result)
 	a.totalClaimableSize.Add(result.Size)
 
