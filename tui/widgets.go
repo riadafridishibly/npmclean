@@ -24,9 +24,7 @@ func (a *App) startScanning() {
 
 	// Load cached results first
 	if cachedResults, err := a.scanner.LoadCachedResults(); err == nil {
-		for _, result := range cachedResults {
-			a.handleResult(result)
-		}
+		a.handleBatchResults(cachedResults)
 	}
 
 	a.scanner.Start()
@@ -88,6 +86,35 @@ func (a *App) buildTable() *cview.Table {
 	// table.SetScrollBarVisibility(cview.ScrollBarNever)
 
 	return table
+}
+
+func (a *App) handleBatchResults(results []*scanner.NodeModuleInfo) {
+	// 1. Build a reverse index
+	ri := make(map[string]int)
+	for i, p := range a.items {
+		ri[p.Path] = i
+	}
+
+	// 2. Iterate through the new items and check if we already have the item
+	for _, result := range results {
+		// We have the path, update existing
+		if idx, ok := ri[result.Path]; ok {
+			oldSize := a.items[idx].Size
+
+			a.items[idx].Size = result.Size
+			a.items[idx].LastModifiedAt = result.LastModifiedAt
+			a.items[idx].ScannedAt = result.ScannedAt
+
+			// Adjust claimable size
+			a.totalClaimableSize.Add(-oldSize + result.Size)
+			continue
+		}
+
+		a.items = append(a.items, result)
+		a.totalClaimableSize.Add(result.Size)
+	}
+
+	a.trySendUIUpdate(func() { a.buildTable() })
 }
 
 func (a *App) handleResult(result *scanner.NodeModuleInfo) {
