@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -55,6 +56,9 @@ type Scanner struct {
 
 	// Cache for storing/retrieving node_modules info
 	cache *cache.Cache
+
+	// Set of paths that have already been processed (from cache or scan)
+	acceptedCachePaths sync.Map
 }
 
 func NewScanner(rootPath string) *Scanner {
@@ -184,7 +188,9 @@ func (s *Scanner) LoadCachedResults() ([]*NodeModuleInfo, error) {
 			continue
 		}
 
-		if currentModTime.Truncate(time.Second).Equal(entry.LastModifiedAt.Truncate(time.Second)) {
+		ct := currentModTime.Truncate(time.Second)
+		lt := entry.LastModifiedAt.Truncate(time.Second)
+		if ct.Equal(lt) {
 			// Mod time matches, use cached size
 			info := &NodeModuleInfo{
 				Path:           entry.Path,
@@ -193,6 +199,8 @@ func (s *Scanner) LoadCachedResults() ([]*NodeModuleInfo, error) {
 				ScannedAt:      entry.ScannedAt,
 			}
 			results = append(results, info)
+			// Mark as processed to avoid recalculating during scan
+			s.acceptedCachePaths.Store(entry.Path, true)
 		} else {
 			// Mod time changed, will be recalculated during scan
 			// Remove outdated entry
@@ -292,7 +300,10 @@ func (s *Scanner) scan() {
 		}
 
 		if d.IsDir() && d.Name() == "node_modules" {
-			s.calculateSize(path)
+			// Check if already processed (from cache)
+			if _, processed := s.acceptedCachePaths.Load(path); !processed {
+				s.calculateSize(path)
+			}
 			return fastwalk.SkipDir
 		}
 
