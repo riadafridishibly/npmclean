@@ -44,8 +44,17 @@ func NewCache() (*Cache, error) {
 
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, err
 	}
+
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	db.Exec(`PRAGMA journal_mode=WAL;`)
+	db.Exec(`PRAGMA synchronous=NORMAL;`)
+	db.Exec(`PRAGMA busy_timeout=5000;`)
+	db.Exec(`PRAGMA temp_store=MEMORY;`)
+	db.Exec(`PRAGMA mmap_size=30000000000;`)
 
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
