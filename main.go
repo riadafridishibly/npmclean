@@ -18,7 +18,7 @@ func tempDir() string {
 }
 
 func main() {
-	logFile, err := os.CreateTemp(tempDir(), "npmclean-*.log")
+	logFile, err := os.Create(filepath.Join(tempDir(), "npmclean.log"))
 	if err != nil {
 		log.Fatalf("Error creating log file: %v", err)
 	}
