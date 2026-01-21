@@ -57,6 +57,10 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error running application: %v\n", err)
 			os.Exit(1)
 		}
+		// Close scanner to clean up cache
+		if app.Scanner() != nil {
+			app.Scanner().Close()
+		}
 		if !app.ShouldRestart() {
 			break
 		}

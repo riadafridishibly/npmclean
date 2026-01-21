@@ -208,3 +208,7 @@ func (a *App) showThemeSelector() {
 func (a *App) ShouldRestart() bool {
 	return a.shouldRestart
 }
+
+func (a *App) Scanner() *scanner.Scanner {
+	return a.scanner
+}

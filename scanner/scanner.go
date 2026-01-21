@@ -3,11 +3,13 @@ package scanner
 import (
 	"context"
 	"io/fs"
+	"os"
 	"runtime"
 	"sync/atomic"
 	"time"
 
 	"github.com/charlievieth/fastwalk"
+	"github.com/riadafridishibly/npmclean/cache"
 )
 
 type NodeModuleInfo struct {
@@ -49,10 +51,18 @@ type Scanner struct {
 	// Context for cancellation
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// Cache for storing/retrieving node_modules info
+	cache *cache.Cache
 }
 
 func NewScanner(rootPath string) *Scanner {
 	ctx, cancel := context.WithCancel(context.Background())
+	c, err := cache.NewCache()
+	if err != nil {
+		// If cache fails, continue without it
+		c = nil
+	}
 	return &Scanner{
 		rootPath:  rootPath,
 		results:   make(chan *NodeModuleInfo, 100),
@@ -63,6 +73,7 @@ func NewScanner(rootPath string) *Scanner {
 		startTime: time.Now(),
 		ctx:       ctx,
 		cancel:    cancel,
+		cache:     c,
 	}
 }
 
@@ -130,6 +141,63 @@ func (s *Scanner) ElapsedTime() time.Duration {
 	return time.Duration(elapsed) * time.Millisecond
 }
 
+func (s *Scanner) Close() error {
+	if s.cache != nil {
+		return s.cache.Close()
+	}
+	return nil
+}
+
+func (s *Scanner) Cache() *cache.Cache {
+	return s.cache
+}
+
+// LoadCachedResults loads and validates cached node_modules entries
+func (s *Scanner) LoadCachedResults() ([]*NodeModuleInfo, error) {
+	if s.cache == nil {
+		return nil, nil
+	}
+
+	entries, err := s.cache.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	var results []*NodeModuleInfo
+	for _, entry := range entries {
+		// Check if path still exists
+		if _, err := os.Stat(entry.Path); os.IsNotExist(err) {
+			// Path doesn't exist, remove from cache
+			s.cache.Delete(entry.Path)
+			continue
+		}
+
+		// Check if modification time matches
+		currentModTime, err := GetLastModifiedAt(entry.Path)
+		if err != nil {
+			// If we can't get mod time, skip this entry
+			continue
+		}
+
+		if currentModTime.Truncate(time.Second).Equal(entry.LastModifiedAt.Truncate(time.Second)) {
+			// Mod time matches, use cached size
+			info := &NodeModuleInfo{
+				Path:           entry.Path,
+				Size:           entry.Size,
+				LastModifiedAt: entry.LastModifiedAt,
+				ScannedAt:      entry.ScannedAt,
+			}
+			results = append(results, info)
+		} else {
+			// Mod time changed, will be recalculated during scan
+			// Remove outdated entry
+			s.cache.Delete(entry.Path)
+		}
+	}
+
+	return results, nil
+}
+
 func (s *Scanner) calculateSize(path string) {
 	result, err := GetDirectorySize(path)
 	if err != nil {
@@ -154,6 +222,20 @@ func (s *Scanner) calculateSize(path string) {
 		Size:           result.Size,
 		LastModifiedAt: lastModified,
 		ScannedAt:      time.Now(),
+	}
+
+	// Update cache if available
+	if s.cache != nil {
+		cacheEntry := &cache.CacheEntry{
+			Path:           path,
+			Size:           result.Size,
+			LastModifiedAt: lastModified,
+			ScannedAt:      info.ScannedAt,
+		}
+		if err := s.cache.InsertOrUpdate(cacheEntry); err != nil {
+			// Log error but don't fail the scan
+			// We can add logging later if needed
+		}
 	}
 
 	select {

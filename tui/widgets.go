@@ -21,6 +21,14 @@ func (a *App) IsScanning() bool {
 
 func (a *App) startScanning() {
 	a.scanner = scanner.NewScanner(a.rootPath)
+
+	// Load cached results first
+	if cachedResults, err := a.scanner.LoadCachedResults(); err == nil {
+		for _, result := range cachedResults {
+			a.handleResult(result)
+		}
+	}
+
 	a.scanner.Start()
 
 	ctx := context.Background()
@@ -172,6 +180,10 @@ func (a *App) deleteSelectedItem() {
 		if err != nil {
 			log.Printf("Error deleting dir: %s: error: %v", p, err)
 		} else {
+			// Remove from cache after successful deletion
+			if a.scanner != nil && a.scanner.Cache() != nil {
+				a.scanner.Cache().Delete(p)
+			}
 			a.trySendUIUpdate(func() { a.footer.SetText(fmt.Sprintf("Deleted: %q", p)) })
 		}
 
