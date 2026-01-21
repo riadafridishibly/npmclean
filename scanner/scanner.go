@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -152,7 +153,7 @@ func (s *Scanner) Cache() *cache.Cache {
 	return s.cache
 }
 
-// LoadCachedResults loads and validates cached node_modules entries
+// LoadCachedResults loads and validates cached node_modules entries under the root path
 func (s *Scanner) LoadCachedResults() ([]*NodeModuleInfo, error) {
 	if s.cache == nil {
 		return nil, nil
@@ -165,6 +166,10 @@ func (s *Scanner) LoadCachedResults() ([]*NodeModuleInfo, error) {
 
 	var results []*NodeModuleInfo
 	for _, entry := range entries {
+		// Only load entries under our root path
+		if !strings.HasPrefix(entry.Path, s.rootPath) {
+			continue
+		}
 		// Check if path still exists
 		if _, err := os.Stat(entry.Path); os.IsNotExist(err) {
 			// Path doesn't exist, remove from cache
