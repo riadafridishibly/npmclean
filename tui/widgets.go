@@ -118,23 +118,7 @@ func (a *App) handleBatchResults(results []*scanner.NodeModuleInfo) {
 }
 
 func (a *App) handleResult(result *scanner.NodeModuleInfo) {
-	// Check if this path is already in items
-	for _, item := range a.items {
-		if item.Path == result.Path {
-			// Update existing item
-			item.Size = result.Size
-			item.LastModifiedAt = result.LastModifiedAt
-			item.ScannedAt = result.ScannedAt
-			a.trySendUIUpdate(func() { a.buildTable() })
-			return
-		}
-	}
-
-	// Add new item
-	a.items = append(a.items, result)
-	a.totalClaimableSize.Add(result.Size)
-
-	a.trySendUIUpdate(func() { a.buildTable() })
+	a.handleBatchResults([]*scanner.NodeModuleInfo{result})
 }
 
 func (a *App) showItemDetail() {
