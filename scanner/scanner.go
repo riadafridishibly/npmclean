@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"io/fs"
+	"log"
 	"os"
 	"runtime"
 	"strings"
@@ -246,8 +247,7 @@ func (s *Scanner) calculateSize(path string) {
 			ScannedAt:      info.ScannedAt,
 		}
 		if err := s.cache.InsertOrUpdate(cacheEntry); err != nil {
-			// Log error but don't fail the scan
-			// We can add logging later if needed
+			log.Printf("Failed to insert entry: %q: %v", path, err)
 		}
 	}
 
