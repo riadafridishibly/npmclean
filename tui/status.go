@@ -45,6 +45,27 @@ func footerStatusScanning(theme *Theme, path string) string {
 	return fmt.Sprintf(" Scanning: [%s]%s", theme.purple.String(), path)
 }
 
+func footerStatusDeleting(theme *Theme, path string) string {
+	return fmt.Sprintf(" Deleting: [%s]%s", theme.red.String(), path)
+}
+
+func footerStatusDeleted(theme *Theme, path string) string {
+	return fmt.Sprintf(" Deleted: [%s]%s[-] (Press any key to continue)", theme.green.String(), path)
+}
+
+func footerStatusDeleteError(theme *Theme, path string, err error) string {
+	return fmt.Sprintf(" Error deleting [%s]%s[-]: %v (Press any key)", theme.red.String(), path, err)
+}
+
+func footerStatusMenuWithQueue(theme *Theme, active, pending int) string {
+	queueInfo := ""
+	if active > 0 || pending > 0 {
+		queueInfo = fmt.Sprintf(" | Deleting: [%s]%d[-] active, [%s]%d[-] pending", theme.orange.String(), active, theme.yellow.String(), pending)
+	}
+	return fmt.Sprintf("[%s] r: Rescan  ↑/↓: Navigate  i: Details  d: Delete  t: Theme  q: Quit%s",
+		theme.fg.String(), queueInfo)
+}
+
 func (a *App) updateFinalStatus() {
 	if a.scanner == nil {
 		return
@@ -56,7 +77,14 @@ func (a *App) updateFinalStatus() {
 	a.header.SetText(headerStatus(&a.currentTheme, int64(len(a.items)), fileCount, a.totalClaimableSize.Load(), a.scanner.ElapsedTime(), a.scanner.IsRunning()))
 
 	a.footer.SetTextAlign(cview.AlignCenter)
-	a.footer.SetText(footerStatusMenu(&a.currentTheme))
+
+	active := int(a.activeDeletes.Load())
+	pending := int(a.pendingDeletes.Load())
+	if active > 0 || pending > 0 {
+		a.footer.SetText(footerStatusMenuWithQueue(&a.currentTheme, active, pending))
+	} else {
+		a.footer.SetText(footerStatusMenu(&a.currentTheme))
+	}
 }
 
 func (a *App) updateProgressStatus(progress *scanner.ScanResult) {

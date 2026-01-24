@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -164,7 +162,6 @@ func (a *App) confirmDelete() {
 	}
 	module, ok := cell.GetReference().(*scanner.NodeModuleInfo)
 	if !ok {
-		// TODO: Send error
 		return
 	}
 	baseName := module.Path
@@ -174,12 +171,6 @@ func (a *App) confirmDelete() {
 	a.setRoot(a.confirmModal, false)
 }
 
-// FIXME: When deleting items we should also consider deleting from cache!
-// Though it'll not be a big of a problem because before using cache, currently
-// we perform an stat call and check if path exists. But the better way is
-// after deleting from system, we should delete from cache as well. Also we
-// need to wait for the delete operation to be done and prevent user from
-// closing the applicaiton.
 func (a *App) deleteSelectedItem() {
 	row, _ := a.table.GetSelection()
 	cell := a.table.GetCell(row, 0)
@@ -189,36 +180,11 @@ func (a *App) deleteSelectedItem() {
 
 	module, ok := cell.GetReference().(*scanner.NodeModuleInfo)
 	if !ok {
-		// TODO: Send error
 		return
 	}
 
-	// TODO: probably acquire lock
-	a.items = slices.DeleteFunc(a.items, func(mod *scanner.NodeModuleInfo) bool { return mod.Path == module.Path })
-
-	a.totalClaimableSize.Add(-module.Size)
-	a.trySendUIUpdate(func() {
-		a.buildTable()
-		a.updateFinalStatus()
-	})
-
-	p := module.Path
-	// TODO: Delete async and update status
-	go func() {
-		a.trySendUIUpdate(func() { a.footer.SetText(fmt.Sprintf("Deleting: %q", p)) })
-		err := os.RemoveAll(p)
-		if err != nil {
-			log.Printf("Error deleting dir: %s: error: %v", p, err)
-		} else {
-			// Remove from cache after successful deletion
-			if a.scanner != nil && a.scanner.Cache() != nil {
-				a.scanner.Cache().Delete(p)
-			}
-			a.trySendUIUpdate(func() { a.footer.SetText(fmt.Sprintf("Deleted: %q", p)) })
-		}
-
-		time.AfterFunc(2*time.Second, func() { a.trySendUIUpdate(a.updateFinalStatus) })
-	}()
+	a.pendingDeletes.Add(1)
+	a.deleteQueue <- module
 }
 
 func (a *App) Stop() {
@@ -234,5 +200,6 @@ func (a *App) Run() error {
 		}
 	}()
 	go a.startScanning()
+	go a.startDeleteWorkers(2)
 	return a.app.Run()
 }

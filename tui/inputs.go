@@ -1,10 +1,28 @@
 package tui
 
-import "github.com/gdamore/tcell/v3"
+import (
+	"strings"
+
+	"github.com/gdamore/tcell/v3"
+)
+
+func containsFooterStatus(text string) bool {
+	return strings.Contains(text, "Deleted:") || strings.Contains(text, "Error deleting")
+}
 
 func (a *App) handleInput(event *tcell.EventKey) *tcell.EventKey {
+	// Clear deletion status on any key press after deletion completes
+	if !a.IsDeleting() && !a.showDetail && !a.showConfirm && !a.showTheme && !a.showQuit {
+		footerText := a.footer.GetText(false)
+		if len(footerText) > 0 {
+			if containsFooterStatus(footerText) {
+				a.trySendUIUpdate(a.updateFinalStatus)
+			}
+		}
+	}
+
 	// TODO: Fix the modal handling
-	if a.showDetail || a.showConfirm || a.showTheme {
+	if a.showDetail || a.showConfirm || a.showTheme || a.showQuit {
 		// Let modals handle their own input
 		switch event.Str() {
 		case "l":
@@ -30,6 +48,12 @@ func (a *App) handleInput(event *tcell.EventKey) *tcell.EventKey {
 
 	switch event.Str() {
 	case "q", "Q":
+		if a.IsDeleting() {
+			a.quitModal.SetText("Deletion in progress. Wait for it to complete or force quit?")
+			a.showQuit = true
+			a.setRoot(a.quitModal, false)
+			return nil
+		}
 		a.Stop()
 		a.app.Stop()
 		return nil

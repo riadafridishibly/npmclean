@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +23,7 @@ type App struct {
 	detailModal  *cview.Modal
 	confirmModal *cview.Modal
 	themeModal   *cview.Modal
+	quitModal    *cview.Modal
 
 	items       []*scanner.NodeModuleInfo
 	rootPath    string
@@ -29,6 +31,7 @@ type App struct {
 	showDetail  bool
 	showConfirm bool
 	showTheme   bool
+	showQuit    bool
 
 	uiUpdates chan func()
 
@@ -38,6 +41,18 @@ type App struct {
 	currentTheme  Theme
 	shouldRestart bool
 	isRestarting  atomic.Bool
+
+	deleteQueue    chan *scanner.NodeModuleInfo
+	deleteDone     chan *deleteResult
+	activeDeletes  atomic.Int64
+	pendingDeletes atomic.Int64
+}
+
+type deleteResult struct {
+	module  *scanner.NodeModuleInfo
+	path    string
+	err     error
+	success bool
 }
 
 func defaultTheme() Theme {
@@ -75,6 +90,11 @@ func (a *App) applyTheme() {
 	a.themeModal.SetTextColor(theme.modalFg)
 	a.themeModal.SetButtonBackgroundColor(theme.buttonBg)
 	a.themeModal.SetButtonTextColor(theme.buttonFg)
+
+	a.quitModal.SetBackgroundColor(theme.modalBg)
+	a.quitModal.SetTextColor(theme.modalFg)
+	a.quitModal.SetButtonBackgroundColor(theme.buttonBg)
+	a.quitModal.SetButtonTextColor(theme.buttonFg)
 
 	a.table.SetBackgroundColor(theme.bg)
 
@@ -116,6 +136,10 @@ func NewApp(scanPath string) *App {
 	themeNames := getThemeNames()
 	themeModal.AddButtons(themeNames)
 
+	quitModal := cview.NewModal()
+	quitModal.SetText("")
+	quitModal.AddButtons([]string{"Wait", "Force Quit"})
+
 	panels := cview.NewPanels()
 	table := cview.NewTable()
 	panels.AddPanel("table", table, true, true)
@@ -127,6 +151,7 @@ func NewApp(scanPath string) *App {
 		detailModal:   detailModal,
 		confirmModal:  confirmModal,
 		themeModal:    themeModal,
+		quitModal:     quitModal,
 		rootPath:      scanPath,
 		panels:        panels,
 		table:         table,
@@ -134,9 +159,12 @@ func NewApp(scanPath string) *App {
 		showDetail:    false,
 		showConfirm:   false,
 		showTheme:     false,
+		showQuit:      false,
 		uiUpdates:     make(chan func(), 128),
 		currentTheme:  theme,
 		shouldRestart: false,
+		deleteQueue:   make(chan *scanner.NodeModuleInfo, 100),
+		deleteDone:    make(chan *deleteResult, 100),
 	}
 
 	flex := cview.NewFlex()
@@ -172,6 +200,16 @@ func NewApp(scanPath string) *App {
 		if buttonIndex >= 0 && buttonIndex < len(themeNames) {
 			a.switchTheme(buttonLabel)
 			a.applyTheme()
+		}
+	})
+
+	quitModal.SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+		a.showQuit = false
+		a.setRoot(flex, true)
+
+		if buttonLabel == "Force Quit" {
+			a.Stop()
+			a.app.Stop()
 		}
 	})
 
@@ -211,4 +249,61 @@ func (a *App) ShouldRestart() bool {
 
 func (a *App) Scanner() *scanner.Scanner {
 	return a.scanner
+}
+
+func (a *App) IsDeleting() bool {
+	return a.activeDeletes.Load() > 0 || a.pendingDeletes.Load() > 0
+}
+
+func (a *App) startDeleteWorkers(workers int) {
+	for i := 0; i < workers; i++ {
+		go a.deleteWorker()
+	}
+	go a.processDeleteResults()
+}
+
+func (a *App) deleteWorker() {
+	for module := range a.deleteQueue {
+		a.activeDeletes.Add(1)
+
+		displayPath := a.replaceHomeWithTilde(module.Path)
+		a.trySendUIUpdate(func() { a.footer.SetText(footerStatusDeleting(&a.currentTheme, displayPath)) })
+
+		err := os.RemoveAll(module.Path)
+
+		a.activeDeletes.Add(-1)
+
+		result := &deleteResult{
+			module:  module,
+			path:    module.Path,
+			err:     err,
+			success: err == nil,
+		}
+
+		a.deleteDone <- result
+	}
+}
+
+func (a *App) processDeleteResults() {
+	for result := range a.deleteDone {
+		a.pendingDeletes.Add(-1)
+		displayPath := a.replaceHomeWithTilde(result.path)
+
+		if result.err != nil {
+			log.Printf("Error deleting dir: %s: error: %v", result.path, result.err)
+			a.trySendUIUpdate(func() { a.footer.SetText(footerStatusDeleteError(&a.currentTheme, displayPath, result.err)) })
+		} else {
+			if a.scanner != nil && a.scanner.Cache() != nil {
+				a.scanner.Cache().Delete(result.path)
+			}
+
+			a.items = slices.DeleteFunc(a.items, func(mod *scanner.NodeModuleInfo) bool { return mod.Path == result.module.Path })
+			a.totalClaimableSize.Add(-result.module.Size)
+			a.trySendUIUpdate(func() {
+				a.buildTable()
+				a.updateFinalStatus()
+				a.footer.SetText(footerStatusDeleted(&a.currentTheme, displayPath))
+			})
+		}
+	}
 }
