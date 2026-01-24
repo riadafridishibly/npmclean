@@ -25,13 +25,9 @@ type App struct {
 	themeModal   *cview.Modal
 	quitModal    *cview.Modal
 
-	items       []*scanner.NodeModuleInfo
-	rootPath    string
-	lastUpdate  time.Time
-	showDetail  bool
-	showConfirm bool
-	showTheme   bool
-	showQuit    bool
+	items      []*scanner.NodeModuleInfo
+	rootPath   string
+	lastUpdate time.Time
 
 	uiUpdates chan func()
 
@@ -156,10 +152,6 @@ func NewApp(scanPath string) *App {
 		panels:        panels,
 		table:         table,
 		items:         make([]*scanner.NodeModuleInfo, 0),
-		showDetail:    false,
-		showConfirm:   false,
-		showTheme:     false,
-		showQuit:      false,
 		uiUpdates:     make(chan func(), 128),
 		currentTheme:  theme,
 		shouldRestart: false,
@@ -176,13 +168,11 @@ func NewApp(scanPath string) *App {
 	app.SetInputCapture(a.handleInput)
 
 	detailModal.SetDoneFunc(func(_ int, _ string) {
-		a.showDetail = false
-		a.setRoot(flex, true)
+		a.panels.RemovePanel("detailModal")
 	})
 
 	confirmModal.SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-		a.showConfirm = false
-		a.setRoot(flex, true)
+		a.panels.RemovePanel("confirmModal")
 
 		switch buttonLabel {
 		case "Delete":
@@ -194,8 +184,7 @@ func NewApp(scanPath string) *App {
 	})
 
 	themeModal.SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-		a.showTheme = false
-		a.setRoot(flex, true)
+		a.panels.RemovePanel("themeModal")
 
 		if buttonIndex >= 0 && buttonIndex < len(themeNames) {
 			a.switchTheme(buttonLabel)
@@ -204,8 +193,7 @@ func NewApp(scanPath string) *App {
 	})
 
 	quitModal.SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-		a.showQuit = false
-		a.setRoot(flex, true)
+		a.panels.RemovePanel("quitModal")
 
 		if buttonLabel == "Force Quit" {
 			a.Stop()
@@ -239,8 +227,7 @@ func (a *App) showThemeSelector() {
 	theme := a.currentTheme
 	text := fmt.Sprintf("Select Theme (Current: [%s]%s[-])", theme.orange.String(), theme.Name)
 	a.themeModal.SetText(text)
-	a.showTheme = true
-	a.setRoot(a.themeModal, false)
+	a.panels.AddPanel("themeModal", a.themeModal, false, true)
 }
 
 func (a *App) ShouldRestart() bool {

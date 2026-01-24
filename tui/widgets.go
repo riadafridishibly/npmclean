@@ -147,8 +147,7 @@ func (a *App) showItemDetail() {
 	fmt.Fprintf(&detail, "Scanned At: %s\n", item.ScannedAt.Format(time.Kitchen))
 
 	a.detailModal.SetText(detail.String())
-	a.showDetail = true
-	a.setRoot(a.detailModal, false)
+	a.panels.AddPanel("detailModal", a.detailModal, false, true)
 }
 
 func (a *App) confirmDelete() {
@@ -167,8 +166,7 @@ func (a *App) confirmDelete() {
 	baseName := module.Path
 	text := fmt.Sprintf("Delete '%s'?\n\nSize: %s", baseName, humanize.Bytes(uint64(module.Size)))
 	a.confirmModal.SetText(text)
-	a.showConfirm = true
-	a.setRoot(a.confirmModal, false)
+	a.panels.AddPanel("confirmModal", a.confirmModal, false, true)
 }
 
 func (a *App) deleteSelectedItem() {

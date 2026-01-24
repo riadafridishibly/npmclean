@@ -11,8 +11,10 @@ func containsFooterStatus(text string) bool {
 }
 
 func (a *App) handleInput(event *tcell.EventKey) *tcell.EventKey {
+	hasModal := a.panels.HasPanel("detailModal") || a.panels.HasPanel("confirmModal") || a.panels.HasPanel("themeModal") || a.panels.HasPanel("quitModal")
+
 	// Clear deletion status on any key press after deletion completes
-	if !a.IsDeleting() && !a.showDetail && !a.showConfirm && !a.showTheme && !a.showQuit {
+	if !a.IsDeleting() && !hasModal {
 		footerText := a.footer.GetText(false)
 		if len(footerText) > 0 {
 			if containsFooterStatus(footerText) {
@@ -21,9 +23,8 @@ func (a *App) handleInput(event *tcell.EventKey) *tcell.EventKey {
 		}
 	}
 
-	// TODO: Fix the modal handling
-	if a.showDetail || a.showConfirm || a.showTheme || a.showQuit {
-		// Let modals handle their own input
+	// Let modals handle their own input
+	if hasModal {
 		switch event.Str() {
 		case "l":
 			return tcell.NewEventKey(tcell.KeyRight, tcell.KeyNames[tcell.KeyRight], tcell.ModNone)
@@ -35,7 +36,7 @@ func (a *App) handleInput(event *tcell.EventKey) *tcell.EventKey {
 	}
 
 	// vi key binding for modal button selection
-	if a.panels != nil && a.panels.HasPanel("confirm") {
+	if a.panels != nil && (a.panels.HasPanel("confirmModal") || a.panels.HasPanel("detailModal") || a.panels.HasPanel("themeModal") || a.panels.HasPanel("quitModal")) {
 		switch event.Str() {
 		case "l":
 			return tcell.NewEventKey(tcell.KeyRight, tcell.KeyNames[tcell.KeyRight], tcell.ModNone)
@@ -50,8 +51,7 @@ func (a *App) handleInput(event *tcell.EventKey) *tcell.EventKey {
 	case "q", "Q":
 		if a.IsDeleting() {
 			a.quitModal.SetText("Deletion in progress. Wait for it to complete or force quit?")
-			a.showQuit = true
-			a.setRoot(a.quitModal, false)
+			a.panels.AddPanel("quitModal", a.quitModal, false, true)
 			return nil
 		}
 		a.Stop()
